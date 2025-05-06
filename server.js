@@ -15,12 +15,10 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// === CONFIG ===
 const MASTER_KEY = "0623";
 const ADMIN_USER = "Administrator";
 const ADMIN_PASS = "x<3Punky0623x";
 
-// === LOGGING ===
 let logBuffer = [];
 
 function log(message) {
@@ -38,8 +36,6 @@ function loadJSON(path) {
 function saveJSON(path, data) {
   fs.writeFileSync(path, JSON.stringify(data, null, 2));
 }
-
-// === ROUTES ===
 
 app.post('/register', (req, res) => {
   const { username, password, masterKey, ip } = req.body;
@@ -77,4 +73,33 @@ app.post('/login', (req, res) => {
 app.post('/admin-login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER && password === ADMIN_PASS) {
-    log(`Admin '${username}' logged
+    log(`Admin '${username}' logged in`);
+    return res.json({ success: true });
+  }
+  log(`Failed admin login with username '${username}'`);
+  res.status(403).json({ error: 'Unauthorized' });
+});
+
+app.get('/logs', (req, res) => {
+  const logs = fs.readFileSync('logs.json', 'utf8');
+  res.type('text').send(`[\n${logs}\n]`);
+});
+
+server.on('upgrade', (req, socket, head) => {
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
+});
+
+wss.on('connection', (ws) => {
+  ws.on('message', (msg) => {
+    const text = msg.toString();
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(text);
+      }
+    });
+  });
+});
+
+server.listen(PORT, () => console.log(`Server running on ${PORT}`));
