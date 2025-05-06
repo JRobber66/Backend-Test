@@ -9,7 +9,6 @@ const bodyParser = require('body-parser');
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
-
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
@@ -20,6 +19,7 @@ const ADMIN_USER = "Administrator";
 const ADMIN_PASS = "x<3Punky0623x";
 
 let logBuffer = [];
+let messageLog = []; // stores recent chat messages
 
 function log(message) {
   const time = new Date().toISOString();
@@ -36,6 +36,8 @@ function loadJSON(path) {
 function saveJSON(path, data) {
   fs.writeFileSync(path, JSON.stringify(data, null, 2));
 }
+
+// === ROUTES ===
 
 app.post('/register', (req, res) => {
   const { username, password, masterKey } = req.body;
@@ -76,20 +78,26 @@ app.post('/admin-login', (req, res) => {
 
 app.get('/logs', (req, res) => {
   const logs = fs.readFileSync('logs.json', 'utf8');
-  res.type('text').send(`[
-${logs}
-]`);
+  res.type('text').send(`[\n${logs}\n]`);
 });
 
+// === WebSocket Upgrade ===
 server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req);
   });
 });
 
+// === WebSocket Chat Logic ===
 wss.on('connection', (ws) => {
+  // Send existing chat history
+  messageLog.forEach(msg => {
+    ws.send(msg);
+  });
+
   ws.on('message', (msg) => {
     const text = msg.toString();
+    messageLog.push(text);
     wss.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(text);
@@ -98,4 +106,16 @@ wss.on('connection', (ws) => {
   });
 });
 
-server.listen(PORT, () => console.log(`Server running on ${PORT}`));
+// === Schedule log clearing every hour ===
+function scheduleHourlyClear() {
+  const now = new Date();
+  const msToNextHour = ((60 - now.getMinutes()) * 60 - now.getSeconds()) * 1000;
+  setTimeout(() => {
+    messageLog = [];
+    console.log(`[CLEAR] Message log cleared.`);
+    scheduleHourlyClear();
+  }, msToNextHour);
+}
+scheduleHourlyClear();
+
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
