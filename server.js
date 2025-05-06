@@ -38,36 +38,30 @@ function saveJSON(path, data) {
 }
 
 app.post('/register', (req, res) => {
-  const { username, password, masterKey, ip } = req.body;
+  const { username, password, masterKey } = req.body;
   if (masterKey !== MASTER_KEY) return res.status(403).json({ error: 'Invalid master key' });
 
   const users = loadJSON('users.json');
-  const ips = loadJSON('ips.json');
-
   if (users[username]) return res.status(409).json({ error: 'User already exists' });
 
   users[username] = password;
-  ips[ip] = username;
-
   saveJSON('users.json', users);
-  saveJSON('ips.json', ips);
-  log(`Registered user '${username}' from IP ${ip}`);
+  log(`Registered user '${username}'`);
   res.json({ success: true });
 });
 
 app.post('/login', (req, res) => {
-  const { username, password, ip } = req.body;
+  const { username, password } = req.body;
   const users = loadJSON('users.json');
-  const ips = loadJSON('ips.json');
 
-  if (users[username] !== password || ips[ip] !== username) {
-    log(`Failed login from IP ${ip} using username '${username}'`);
-    return res.status(403).json({ error: 'Invalid credentials or IP' });
+  if (users[username] !== password) {
+    log(`Failed login using username '${username}'`);
+    return res.status(403).json({ error: 'Invalid credentials' });
   }
 
   const token = crypto.randomBytes(24).toString('hex');
   res.json({ token, displayName: username });
-  log(`User '${username}' logged in from IP ${ip}`);
+  log(`User '${username}' logged in`);
 });
 
 app.post('/admin-login', (req, res) => {
@@ -82,7 +76,9 @@ app.post('/admin-login', (req, res) => {
 
 app.get('/logs', (req, res) => {
   const logs = fs.readFileSync('logs.json', 'utf8');
-  res.type('text').send(`[\n${logs}\n]`);
+  res.type('text').send(`[
+${logs}
+]`);
 });
 
 server.on('upgrade', (req, socket, head) => {
