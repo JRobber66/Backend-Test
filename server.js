@@ -11,26 +11,37 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
 const PORT = process.env.PORT || 3000;
 
-// Setup middleware
 app.use(cors());
 app.use(bodyParser.json());
-
-// In-memory token store
-const validTokens = new Set();
 
 // Hardcoded users
 const USERS = {
   "admin": "password"
 };
 
-// Your Discord webhook URL
+// Auth token store
+const validTokens = new Set();
+
+// Webhook URL
 const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1369437314257780817/u3mVxV-b9Dl-952xMElyOz0dbLP1fX-UFEs9jKHVwR5r-SN4nNkKUIzHSWQHlzfXRYpJ";
 
-// Send log to Discord
-function logToDiscord(message) {
-  const payload = JSON.stringify({ content: message });
+// In-memory log buffer
+let logBuffer = [];
 
+// Send logs to Discord
+function flushLogBuffer() {
+  if (logBuffer.length === 0) return;
+
+  const message = "📜 **Server Log Dump**\n```\n" + logBuffer.join('\n') + "\n```";
+  logBuffer = [];
+  postToDiscord(message);
+}
+
+// Post to Discord
+function postToDiscord(content) {
+  const payload = JSON.stringify({ content });
   const url = new URL(DISCORD_WEBHOOK_URL);
+
   const options = {
     hostname: url.hostname,
     path: url.pathname + url.search,
@@ -42,7 +53,7 @@ function logToDiscord(message) {
   };
 
   const req = https.request(options, (res) => {
-    res.on('data', () => {}); // just drain response
+    res.on('data', () => {}); // no-op
   });
 
   req.on('error', (err) => {
@@ -53,14 +64,25 @@ function logToDiscord(message) {
   req.end();
 }
 
-// Log all requests
+// Log helper
+function logEvent(message) {
+  const timestamp = new Date().toISOString();
+  const line = `[${timestamp}] ${message}`;
+  console.log(line);
+  logBuffer.push(line);
+}
+
+// Flush logs every 5 minutes
+setInterval(flushLogBuffer, 5 * 60 * 1000);
+
+// Log all HTTP access
 app.use((req, res, next) => {
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  logToDiscord(`📥 IP ${ip} accessed server via ${req.method} ${req.originalUrl}`);
+  logEvent(`IP ${ip} accessed server via ${req.method} ${req.originalUrl}`);
   next();
 });
 
-// Login route
+// Login with logging
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -69,15 +91,15 @@ app.post('/login', (req, res) => {
     const token = crypto.randomBytes(24).toString('hex');
     validTokens.add(token);
     setTimeout(() => validTokens.delete(token), 30 * 60 * 1000);
-    logToDiscord(`✅ IP ${ip} successfully logged in as '${username}'`);
+    logEvent(`IP ${ip} successfully logged in as '${username}'`);
     return res.json({ token });
   }
 
-  logToDiscord(`❌ IP ${ip} failed login with username '${username}' and password '${password}'`);
+  logEvent(`IP ${ip} failed login with username '${username}' and password '${password}'`);
   res.status(401).json({ error: 'Invalid credentials' });
 });
 
-// WebSocket upgrade
+// Upgrade HTTP to WebSocket with auth
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const token = url.searchParams.get('token');
@@ -97,6 +119,14 @@ server.on('upgrade', (req, socket, head) => {
 wss.on('connection', (ws) => {
   ws.on('message', (msg) => {
     const text = msg.toString();
+
+    // Manual log dump trigger
+    if (text.includes("@webhook .getlog")) {
+      flushLogBuffer();
+      return;
+    }
+
+    // Otherwise, broadcast normally
     wss.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(text);
