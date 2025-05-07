@@ -70,37 +70,29 @@ function logToWebhook(content) {
 
 // === HTTP Routes ===
 
-// Register new user with chosen displayName
 app.post('/register', (req, res) => {
   const { username, password, displayName, masterKey } = req.body;
   if (masterKey !== MASTER_KEY) return res.status(403).json({ error: 'Invalid master key' });
-
   const users = loadJSON('users.json') || {};
   if (users[username]) return res.status(409).json({ error: 'User already exists' });
-
   users[username] = { password, displayName };
   saveJSON('users.json', users);
   res.json({ success: true });
 });
 
-// Login for regular users
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-
   const users = loadJSON('users.json') || {};
   const u = users[username];
   if (!u || u.password !== password) return res.status(403).json({ error: 'Invalid credentials' });
-
   const banKey = `${ip}|${username}`;
   if (bans.has(banKey)) return res.status(403).json({ error: 'You are banned' });
-
   const token = crypto.randomBytes(24).toString('hex');
   userTokens.set(token, { username, displayName: u.displayName, ip });
   res.json({ token, displayName: u.displayName });
 });
 
-// Admin login
 app.post('/admin-login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER && password === ADMIN_PASS) {
@@ -112,7 +104,6 @@ app.post('/admin-login', (req, res) => {
   res.status(403).json({ error: 'Unauthorized' });
 });
 
-// Rebind token after client reload
 app.post('/bind-token', (req, res) => {
   const { token, username, displayName } = req.body;
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -120,7 +111,6 @@ app.post('/bind-token', (req, res) => {
   res.json({ success: true });
 });
 
-// Delete message (user-owned or admin)
 app.post('/delete', (req, res) => {
   const { token, id } = req.body;
   const u = userTokens.get(token);
@@ -135,11 +125,9 @@ app.post('/delete', (req, res) => {
   res.json({ success: true });
 });
 
-// Admin dashboard state
 app.post('/admin-state', (req, res) => {
   const token = req.body.token;
   if (!adminTokens.has(token)) return res.status(403).json({ error: "Forbidden" });
-
   const users = [...userTokens.values()].map(u => ({
     username:    u.username,
     displayName: u.displayName,
@@ -148,11 +136,9 @@ app.post('/admin-state', (req, res) => {
   res.json({ users, bans: [...bans] });
 });
 
-// Admin log viewer
 app.post('/admin-log', (req, res) => {
   const token = req.body.token;
   if (!adminTokens.has(token)) return res.status(403).json({ error: "Forbidden" });
-
   try {
     const log = fs.readFileSync(MESSAGES_FILE, "utf8");
     res.json({ log });
@@ -161,7 +147,8 @@ app.post('/admin-log', (req, res) => {
   }
 });
 
-// === WebSocket handling ===
+// === WebSocket Handling ===
+
 server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, ws => {
     ws.ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -170,7 +157,7 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 wss.on('connection', (ws) => {
-  // Send existing chat history
+  // Send existing history
   messageLog.forEach((entry, id) => {
     const html = `<b>${entry.sender}</b> [${entry.timestamp}]: ${entry.deleted ? "[Deleted Message]" : entry.content}`;
     ws.send(JSON.stringify({
@@ -182,11 +169,16 @@ wss.on('connection', (ws) => {
 
   ws.on('message', (msg) => {
     const raw = msg.toString();
-
-    // Commands start with "/"
     if (raw.startsWith("/")) {
       const [cmd, arg] = raw.trim().split(" ");
 
+      if (cmd === "/clear-accounts") {
+        // wipe all registered accounts
+        fs.writeFileSync("users.json", JSON.stringify({}, null,2));
+        userTokens.clear();
+        broadcast({ type:"system", content:"All accounts have been cleared by admin." });
+        return;
+      }
       if (cmd === "/clear") {
         messageLog.forEach(m => m.deleted = true);
         saveMessages();
@@ -196,7 +188,7 @@ wss.on('connection', (ws) => {
       if (cmd === "/help") {
         ws.send(JSON.stringify({
           type: "system",
-          content: "Commands: /clear /ban <name> /unban <name> /help"
+          content: "Commands: /clear /clear-accounts /ban <name> /unban <name> /help"
         }));
         return;
       }
@@ -228,7 +220,6 @@ wss.on('connection', (ws) => {
     const entry = { sender, timestamp, content, deleted: false };
     const id = messageLog.push(entry) - 1;
     saveMessages();
-
     broadcast({ type: "message", id, html: `<b>${sender}</b> [${timestamp}]: ${content}` });
     logToWebhook(`<b>${sender}</b> [${timestamp}]: ${content}`);
   });
