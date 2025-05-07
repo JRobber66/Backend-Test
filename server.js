@@ -18,15 +18,45 @@ const MASTER_KEY = "0623";
 const ADMIN_USER = "Administrator";
 const ADMIN_PASS = "x<3Punky0623x";
 
-let logBuffer = [];
-let messageLog = []; // stores recent chat messages
+const messageLog = [];
+const userTokens = new Map(); // token → username
 
-function log(message) {
-  const time = new Date().toISOString();
-  const entry = `[${time}] ${message}`;
-  logBuffer.push(entry);
-  fs.appendFileSync('logs.json', JSON.stringify(entry) + ",\n");
+const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1369437314257780817/u3mVxV-b9Dl-952xMElyOz0dbLP1fX-UFEs9jKHVwR5r-SN4nNkKUIzHSWQHlzfXRYpJ";
+
+// ========== Utility ==========
+
+function logToWebhook(content) {
+  const payload = JSON.stringify({ content });
+  const https = require('https');
+  const url = new URL(DISCORD_WEBHOOK_URL);
+  const options = {
+    method: "POST",
+    hostname: url.hostname,
+    path: url.pathname + url.search,
+    headers: {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(payload)
+    }
+  };
+  const req = https.request(options);
+  req.write(payload);
+  req.end();
 }
+
+function broadcast(messageObj) {
+  const formatted = messageObj.deleted
+    ? null
+    : `<b>${messageObj.sender}</b> [${messageObj.timestamp}]: ${messageObj.content}`;
+  if (formatted) {
+    wss.clients.forEach(ws => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(formatted);
+      }
+    });
+  }
+}
+
+// ========== Auth ==========
 
 function loadJSON(path) {
   if (!fs.existsSync(path)) return {};
@@ -37,7 +67,7 @@ function saveJSON(path, data) {
   fs.writeFileSync(path, JSON.stringify(data, null, 2));
 }
 
-// === ROUTES ===
+// ========== Routes ==========
 
 app.post('/register', (req, res) => {
   const { username, password, masterKey } = req.body;
@@ -48,7 +78,6 @@ app.post('/register', (req, res) => {
 
   users[username] = password;
   saveJSON('users.json', users);
-  log(`Registered user '${username}'`);
   res.json({ success: true });
 });
 
@@ -57,65 +86,88 @@ app.post('/login', (req, res) => {
   const users = loadJSON('users.json');
 
   if (users[username] !== password) {
-    log(`Failed login using username '${username}'`);
     return res.status(403).json({ error: 'Invalid credentials' });
   }
 
   const token = crypto.randomBytes(24).toString('hex');
+  userTokens.set(token, username);
   res.json({ token, displayName: username });
-  log(`User '${username}' logged in`);
 });
 
 app.post('/admin-login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER && password === ADMIN_PASS) {
-    log(`Admin '${username}' logged in`);
     return res.json({ success: true });
   }
-  log(`Failed admin login with username '${username}'`);
   res.status(403).json({ error: 'Unauthorized' });
 });
 
-app.get('/logs', (req, res) => {
-  const logs = fs.readFileSync('logs.json', 'utf8');
-  res.type('text').send(`[\n${logs}\n]`);
+// Delete message endpoint
+app.post('/delete', (req, res) => {
+  const { token, id } = req.body;
+  const username = userTokens.get(token);
+  const msg = messageLog[id];
+  if (!msg || msg.sender !== username) {
+    return res.status(403).json({ error: "Not allowed" });
+  }
+  msg.deleted = true;
+  res.json({ success: true });
 });
 
-// === WebSocket Upgrade ===
+// Hourly webhook dump
+function hourlyDump() {
+  const now = new Date();
+  const msToNextHour = ((60 - now.getMinutes()) * 60 - now.getSeconds()) * 1000;
+  setTimeout(() => {
+    const time = new Date().toLocaleTimeString();
+    const dump = messageLog.map(m =>
+      m.deleted ? `[${m.timestamp}] ${m.sender}: (deleted by user)` :
+      `[${m.timestamp}] ${m.sender}: ${m.content}`
+    ).join("\n");
+
+    logToWebhook(`📤 **Hourly Chat Log (${time})**\n\`\`\`\n${dump}\n\`\`\``);
+
+    messageLog.length = 0; // Clear log
+    hourlyDump();
+  }, msToNextHour);
+}
+
+hourlyDump();
+
+// ========== WebSocket Chat ==========
+
 server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req);
   });
 });
 
-// === WebSocket Chat Logic ===
 wss.on('connection', (ws) => {
-  // Send existing chat history
-  messageLog.forEach(msg => {
-    ws.send(msg);
-  });
-
   ws.on('message', (msg) => {
-    const text = msg.toString();
-    messageLog.push(text);
-    wss.clients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(text);
-      }
-    });
+    const raw = msg.toString();
+    const match = raw.match(/^<b>(.+?)<\/b>\s+\[(.+?)\]:\s+(.+)$/);
+    if (!match) return;
+
+    const [, sender, timestamp, content] = match;
+    const entry = {
+      sender,
+      timestamp,
+      content,
+      deleted: false
+    };
+
+    const index = messageLog.push(entry) - 1;
+
+    // Forward to clients
+    broadcast(entry);
+
+    // Also log to webhook
+    logToWebhook(`<b>${sender}</b> [${timestamp}]: ${content}`);
   });
 });
 
-// === Schedule log clearing every hour ===
-function scheduleHourlyClear() {
-  const now = new Date();
-  const msToNextHour = ((60 - now.getMinutes()) * 60 - now.getSeconds()) * 1000;
-  setTimeout(() => {
-    messageLog = [];
-    console.log(`[CLEAR] Message log cleared.`);
-    scheduleHourlyClear();
-  }, msToNextHour);
-}
-scheduleHourlyClear();
+// ========== Start Server ==========
 
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Chat server running on port ${PORT}`);
+});
