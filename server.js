@@ -97,6 +97,13 @@ app.post('/admin-login', (req, res) => {
   res.status(403).json({ error: 'Unauthorized' });
 });
 
+app.post('/bind-token', (req, res) => {
+  const { token, username } = req.body;
+  if (!token || !username) return res.status(400).json({ error: "Missing data" });
+  userTokens.set(token, username);
+  res.json({ success: true });
+});
+
 app.post('/delete', (req, res) => {
   const { token, id } = req.body;
   const username = userTokens.get(token);
