@@ -19,10 +19,24 @@ const MASTER_KEY = "0623";
 const ADMIN_USER = "Administrator";
 const ADMIN_PASS = "x<3Punky0623x";
 
-const messageLog = [];
+const MESSAGES_FILE = "messages.json";
+const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1369437314257780817/u3mVxV-b9Dl-952xMElyOz0dbLP1fX-UFEs9jKHVwR5r-SN4nNkKUIzHSWQHlzfXRYpJ";
+
+let messageLog = loadMessages();
 const userTokens = new Map();
 
-const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1369437314257780817/u3mVxV-b9Dl-952xMElyOz0dbLP1fX-UFEs9jKHVwR5r-SN4nNkKUIzHSWQHlzfXRYpJ";
+function loadMessages() {
+  try {
+    if (!fs.existsSync(MESSAGES_FILE)) return [];
+    return JSON.parse(fs.readFileSync(MESSAGES_FILE));
+  } catch {
+    return [];
+  }
+}
+
+function saveMessages() {
+  fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messageLog, null, 2));
+}
 
 function logToWebhook(content) {
   const payload = JSON.stringify({ content });
@@ -106,6 +120,7 @@ app.post('/delete', (req, res) => {
     return res.status(403).json({ error: "Not allowed" });
   }
   msg.deleted = true;
+  saveMessages();
   res.json({ success: true });
 });
 
@@ -123,6 +138,7 @@ function hourlyDump() {
     logToWebhook(`📤 **Hourly Chat Log (${time})**\n\`\`\`\n${dump}\n\`\`\``);
 
     messageLog.length = 0;
+    saveMessages();
     hourlyDump();
   }, msToNextHour);
 }
@@ -136,9 +152,15 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 wss.on('connection', (ws) => {
+  // send current messages to the new user
+  messageLog.forEach(entry => {
+    if (!entry.deleted) {
+      ws.send(`<b>${entry.sender}</b> [${entry.timestamp}]: ${entry.content}`);
+    }
+  });
+
   ws.on('message', (msg) => {
     const raw = msg.toString();
-
     if (raw.includes("[SYSTEM]")) return;
 
     const match = raw.match(/^<b>(.+?)<\/b> \[(.+?)\]: (.+)$/);
@@ -156,6 +178,7 @@ wss.on('connection', (ws) => {
     };
 
     const index = messageLog.push(entry) - 1;
+    saveMessages();
     broadcast(entry);
     logToWebhook(`<b>${sender}</b> [${timestamp}]: ${content}`);
   });
