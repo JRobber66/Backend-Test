@@ -23,6 +23,7 @@ const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/136943731425778081
 
 let messageLog = loadMessages();
 const userTokens = new Map();
+const adminTokens = new Set();
 
 function loadMessages() {
   try {
@@ -92,7 +93,10 @@ app.post('/login', (req, res) => {
 app.post('/admin-login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER && password === ADMIN_PASS) {
-    return res.json({ success: true });
+    const token = crypto.randomBytes(24).toString('hex');
+    adminTokens.add(token);
+    userTokens.set(token, username);
+    return res.json({ token, displayName: username });
   }
   res.status(403).json({ error: 'Unauthorized' });
 });
@@ -107,8 +111,9 @@ app.post('/bind-token', (req, res) => {
 app.post('/delete', (req, res) => {
   const { token, id } = req.body;
   const username = userTokens.get(token);
+  const isAdmin = adminTokens.has(token);
   const msg = messageLog[id];
-  if (!msg || msg.sender !== username) {
+  if (!msg || (msg.sender !== username && !isAdmin)) {
     return res.status(403).json({ error: "Not allowed" });
   }
 
@@ -151,18 +156,30 @@ server.on('upgrade', (req, socket, head) => {
 
 wss.on('connection', (ws) => {
   messageLog.forEach((entry, id) => {
-    if (!entry.deleted) {
-      ws.send(JSON.stringify({
-        type: "message",
-        id,
-        html: `<b>${entry.sender}</b> [${entry.timestamp}]: ${entry.content}`
-      }));
-    }
+    const payload = {
+      type: entry.deleted ? "delete" : "message",
+      id,
+      html: `<b>${entry.sender}</b> [${entry.timestamp}]: ${entry.deleted ? "[Deleted Message]" : entry.content}`
+    };
+    ws.send(JSON.stringify(payload));
   });
 
   ws.on('message', (msg) => {
     const raw = msg.toString();
     if (raw.includes("[SYSTEM]")) return;
+
+    if (raw.startsWith("/clear")) {
+      for (let i = 0; i < messageLog.length; i++) {
+        messageLog[i].deleted = true;
+      }
+      saveMessages();
+      wss.clients.forEach(c => {
+        if (c.readyState === WebSocket.OPEN) {
+          c.send(JSON.stringify({ type: "clear" }));
+        }
+      });
+      return;
+    }
 
     const match = raw.match(/^<b>(.+?)<\/b> \[(.+?)\]: (.+)$/);
     if (!match) return;
