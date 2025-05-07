@@ -1,4 +1,3 @@
-
 const express = require('express');
 const fs = require('fs');
 const http = require('http');
@@ -6,6 +5,7 @@ const WebSocket = require('ws');
 const crypto = require('crypto');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const https = require('https');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,7 +26,6 @@ const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/136943731425778081
 
 function logToWebhook(content) {
   const payload = JSON.stringify({ content });
-  const https = require('https');
   const url = new URL(DISCORD_WEBHOOK_URL);
   const options = {
     method: "POST",
@@ -37,7 +36,8 @@ function logToWebhook(content) {
       "Content-Length": Buffer.byteLength(payload)
     }
   };
-  const req = https.request(options);
+  const req = https.request(options, res => res.on('data', () => {}));
+  req.on('error', err => console.error("Webhook error:", err));
   req.write(payload);
   req.end();
 }
@@ -64,6 +64,7 @@ function saveJSON(path, data) {
   fs.writeFileSync(path, JSON.stringify(data, null, 2));
 }
 
+// === Auth Routes ===
 app.post('/register', (req, res) => {
   const { username, password, masterKey } = req.body;
   if (masterKey !== MASTER_KEY) return res.status(403).json({ error: 'Invalid master key' });
@@ -108,6 +109,7 @@ app.post('/delete', (req, res) => {
   res.json({ success: true });
 });
 
+// === Hourly webhook dump ===
 function hourlyDump() {
   const now = new Date();
   const msToNextHour = ((60 - now.getMinutes()) * 60 - now.getSeconds()) * 1000;
@@ -118,18 +120,15 @@ function hourlyDump() {
       `[${m.timestamp}] ${m.sender}: ${m.content}`
     ).join("\n");
 
-    logToWebhook(`📤 **Hourly Chat Log (${time})**
-\`\`\`
-${dump}
-\`\`\``);
+    logToWebhook(`📤 **Hourly Chat Log (${time})**\n\`\`\`\n${dump}\n\`\`\``);
 
     messageLog.length = 0;
     hourlyDump();
   }, msToNextHour);
 }
-
 hourlyDump();
 
+// === WebSocket Setup ===
 server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req);
@@ -139,8 +138,14 @@ server.on('upgrade', (req, socket, head) => {
 wss.on('connection', (ws) => {
   ws.on('message', (msg) => {
     const raw = msg.toString();
-    const match = raw.match(/^<b>(.+?)<\/b>\s+\[(.+?)\]:\s+(.+)$/);
-    if (!match) return;
+
+    if (raw.includes("[SYSTEM]")) return;
+
+    const match = raw.match(/^<b>(.+?)<\/b> \[(.+?)\]: (.+)$/);
+    if (!match) {
+      console.warn("Failed to parse message:", raw);
+      return;
+    }
 
     const [, sender, timestamp, content] = match;
     const entry = {
