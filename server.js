@@ -18,7 +18,6 @@ app.use(bodyParser.json());
 const MASTER_KEY = "0623";
 const ADMIN_USER = "Administrator";
 const ADMIN_PASS = "x<3Punky0623x";
-
 const MESSAGES_FILE = "messages.json";
 const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1369437314257780817/u3mVxV-b9Dl-952xMElyOz0dbLP1fX-UFEs9jKHVwR5r-SN4nNkKUIzHSWQHlzfXRYpJ";
 
@@ -56,19 +55,6 @@ function logToWebhook(content) {
   req.end();
 }
 
-function broadcast(messageObj) {
-  const formatted = messageObj.deleted
-    ? null
-    : `<b>${messageObj.sender}</b> [${messageObj.timestamp}]: ${messageObj.content}`;
-  if (formatted) {
-    wss.clients.forEach(ws => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(formatted);
-      }
-    });
-  }
-}
-
 function loadJSON(path) {
   if (!fs.existsSync(path)) return {};
   return JSON.parse(fs.readFileSync(path));
@@ -78,7 +64,6 @@ function saveJSON(path, data) {
   fs.writeFileSync(path, JSON.stringify(data, null, 2));
 }
 
-// === Auth Routes ===
 app.post('/register', (req, res) => {
   const { username, password, masterKey } = req.body;
   if (masterKey !== MASTER_KEY) return res.status(403).json({ error: 'Invalid master key' });
@@ -119,12 +104,20 @@ app.post('/delete', (req, res) => {
   if (!msg || msg.sender !== username) {
     return res.status(403).json({ error: "Not allowed" });
   }
+
   msg.deleted = true;
   saveMessages();
+
+  const deleteMsg = JSON.stringify({ type: "delete", id });
+  wss.clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(deleteMsg);
+    }
+  });
+
   res.json({ success: true });
 });
 
-// === Hourly webhook dump ===
 function hourlyDump() {
   const now = new Date();
   const msToNextHour = ((60 - now.getMinutes()) * 60 - now.getSeconds()) * 1000;
@@ -136,7 +129,6 @@ function hourlyDump() {
     ).join("\n");
 
     logToWebhook(`📤 **Hourly Chat Log (${time})**\n\`\`\`\n${dump}\n\`\`\``);
-
     messageLog.length = 0;
     saveMessages();
     hourlyDump();
@@ -144,7 +136,6 @@ function hourlyDump() {
 }
 hourlyDump();
 
-// === WebSocket Setup ===
 server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req);
@@ -152,10 +143,13 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 wss.on('connection', (ws) => {
-  // send current messages to the new user
-  messageLog.forEach(entry => {
+  messageLog.forEach((entry, id) => {
     if (!entry.deleted) {
-      ws.send(`<b>${entry.sender}</b> [${entry.timestamp}]: ${entry.content}`);
+      ws.send(JSON.stringify({
+        type: "message",
+        id,
+        html: `<b>${entry.sender}</b> [${entry.timestamp}]: ${entry.content}`
+      }));
     }
   });
 
@@ -164,23 +158,26 @@ wss.on('connection', (ws) => {
     if (raw.includes("[SYSTEM]")) return;
 
     const match = raw.match(/^<b>(.+?)<\/b> \[(.+?)\]: (.+)$/);
-    if (!match) {
-      console.warn("Failed to parse message:", raw);
-      return;
-    }
+    if (!match) return;
 
     const [, sender, timestamp, content] = match;
-    const entry = {
-      sender,
-      timestamp,
-      content,
-      deleted: false
-    };
-
-    const index = messageLog.push(entry) - 1;
+    const entry = { sender, timestamp, content, deleted: false };
+    const id = messageLog.push(entry) - 1;
     saveMessages();
-    broadcast(entry);
-    logToWebhook(`<b>${sender}</b> [${timestamp}]: ${content}`);
+
+    const payload = JSON.stringify({
+      type: "message",
+      id,
+      html: `<b>${sender}</b> [${timestamp}]: ${content}`
+    });
+
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload);
+      }
+    });
+
+    logToWebhook(payload);
   });
 });
 
