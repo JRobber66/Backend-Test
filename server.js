@@ -16,13 +16,14 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // === Config ===
-const MASTER_KEY   = "0623";
-const ADMIN_USER   = "Administrator";
-const ADMIN_PASS   = "x<3Punky0623x";
+const MASTER_KEY    = "0623";
+const ADMIN_USER    = "Administrator";
+const ADMIN_PASS    = "x<3Punky0623x";
 const MESSAGES_FILE = "messages.json";
 const BANS_FILE     = "bans.json";
+const WEBHOOK_URL   = "https://discord.com/api/webhooks/1369437314257780817/u3mVxV-b9Dl-952xMElyOz0dbLP1fX-UFEs9jKHVwR5r-SN4nNkKUIzHSWQHlzfXRYpJ";
 
-// === In-memory state ===
+// === Persistent state ===
 let messageLog = loadJSON(MESSAGES_FILE) || [];
 let bans       = new Set(loadJSON(BANS_FILE) || []);
 const userTokens  = new Map(); // token → { username, displayName, ip }
@@ -44,24 +45,24 @@ function saveBans() {
   saveJSON(BANS_FILE, [...bans]);
 }
 function broadcast(obj) {
-  const json = JSON.stringify(obj);
+  const msg = JSON.stringify(obj);
   wss.clients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(json);
+    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
   });
 }
 function logToWebhook(content) {
   const payload = JSON.stringify({ content });
-  const url = new URL("https://discord.com/api/webhooks/1369437314257780817/u3mVxV-b9Dl-952xMElyOz0dbLP1fX-UFEs9jKHVwR5r-SN4nNkKUIzHSWQHlzfXRYpJ");
+  const url = new URL(WEBHOOK_URL);
   const opts = {
     method: "POST",
     hostname: url.hostname,
-    path:     url.pathname + url.search,
+    path: url.pathname + url.search,
     headers: {
       "Content-Type":   "application/json",
       "Content-Length": Buffer.byteLength(payload)
     }
   };
-  const req = https.request(opts, res => res.on('data',()=>{}));
+  const req = https.request(opts, res => res.on('data', () => {}));
   req.on('error', err => console.error("Webhook error:", err));
   req.write(payload);
   req.end();
@@ -69,7 +70,7 @@ function logToWebhook(content) {
 
 // === HTTP Routes ===
 
-// Register with chosen displayName
+// Register new user with chosen displayName
 app.post('/register', (req, res) => {
   const { username, password, displayName, masterKey } = req.body;
   if (masterKey !== MASTER_KEY) return res.status(403).json({ error: 'Invalid master key' });
@@ -82,7 +83,7 @@ app.post('/register', (req, res) => {
   res.json({ success: true });
 });
 
-// Login (blocks banned IP|username)
+// Login for regular users
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -106,12 +107,12 @@ app.post('/admin-login', (req, res) => {
     const token = crypto.randomBytes(24).toString('hex');
     adminTokens.add(token);
     userTokens.set(token, { username, displayName: username, ip: 'admin' });
-    return res.json({ token, displayName: username });
+    return res.json({ success: true, token, displayName: username });
   }
   res.status(403).json({ error: 'Unauthorized' });
 });
 
-// Rebind token after reload
+// Rebind token after client reload
 app.post('/bind-token', (req, res) => {
   const { token, username, displayName } = req.body;
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -119,7 +120,7 @@ app.post('/bind-token', (req, res) => {
   res.json({ success: true });
 });
 
-// Delete message (user or admin)
+// Delete message (user-owned or admin)
 app.post('/delete', (req, res) => {
   const { token, id } = req.body;
   const u = userTokens.get(token);
@@ -134,7 +135,7 @@ app.post('/delete', (req, res) => {
   res.json({ success: true });
 });
 
-// Admin-state for dashboard
+// Admin dashboard state
 app.post('/admin-state', (req, res) => {
   const token = req.body.token;
   if (!adminTokens.has(token)) return res.status(403).json({ error: "Forbidden" });
@@ -147,7 +148,7 @@ app.post('/admin-state', (req, res) => {
   res.json({ users, bans: [...bans] });
 });
 
-// Admin-log for dashboard
+// Admin log viewer
 app.post('/admin-log', (req, res) => {
   const token = req.body.token;
   if (!adminTokens.has(token)) return res.status(403).json({ error: "Forbidden" });
@@ -160,7 +161,7 @@ app.post('/admin-log', (req, res) => {
   }
 });
 
-// === WebSocket Handling ===
+// === WebSocket handling ===
 server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, ws => {
     ws.ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -169,47 +170,52 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 wss.on('connection', (ws) => {
-  // Send existing history
+  // Send existing chat history
   messageLog.forEach((entry, id) => {
     const html = `<b>${entry.sender}</b> [${entry.timestamp}]: ${entry.deleted ? "[Deleted Message]" : entry.content}`;
-    broadcastPayload(ws, entry.deleted ? "delete" : "message", id, html);
+    ws.send(JSON.stringify({
+      type: entry.deleted ? "delete" : "message",
+      id,
+      html
+    }));
   });
 
   ws.on('message', (msg) => {
     const raw = msg.toString();
 
-    // Admin/User commands start with "/"
+    // Commands start with "/"
     if (raw.startsWith("/")) {
       const [cmd, arg] = raw.trim().split(" ");
-      // /clear
+
       if (cmd === "/clear") {
         messageLog.forEach(m => m.deleted = true);
         saveMessages();
         broadcast({ type: "clear" });
+        return;
       }
-      // /help
-      else if (cmd === "/help") {
+      if (cmd === "/help") {
         ws.send(JSON.stringify({
           type: "system",
           content: "Commands: /clear /ban <name> /unban <name> /help"
         }));
+        return;
       }
-      // /ban <displayName>
-      else if (cmd === "/ban" && arg) {
-        const u = [...userTokens.values()].find(u => u.displayName === arg);
-        if (u && u.username !== ADMIN_USER) {
-          bans.add(`${u.ip}|${u.username}`);
+      if (cmd === "/ban" && arg) {
+        const victim = [...userTokens.values()].find(u => u.displayName === arg);
+        if (victim && victim.username !== ADMIN_USER) {
+          bans.add(`${victim.ip}|${victim.username}`);
           saveBans();
           broadcast({ type: "system", content: `${arg} has been banned.` });
         }
+        return;
       }
-      // /unban <displayName>
-      else if (cmd === "/unban" && arg) {
+      if (cmd === "/unban" && arg) {
         [...bans].forEach(key => {
           if (key.endsWith(`|${arg}`)) bans.delete(key);
         });
         saveBans();
         broadcast({ type: "system", content: `${arg} has been unbanned.` });
+        return;
       }
       return;
     }
@@ -218,6 +224,7 @@ wss.on('connection', (ws) => {
     const match = raw.match(/^<b>(.+?)<\/b> \[(.+?)\]: (.+)$/);
     if (!match) return;
     const [, sender, timestamp, content] = match;
+
     const entry = { sender, timestamp, content, deleted: false };
     const id = messageLog.push(entry) - 1;
     saveMessages();
@@ -226,11 +233,6 @@ wss.on('connection', (ws) => {
     logToWebhook(`<b>${sender}</b> [${timestamp}]: ${content}`);
   });
 });
-
-// Helper to send a specific payload to a single socket
-function broadcastPayload(ws, type, id, html) {
-  ws.send(JSON.stringify({ type, id, html }));
-}
 
 server.listen(PORT, () => {
   console.log(`Chat server running on port ${PORT}`);
