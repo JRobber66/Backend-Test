@@ -118,9 +118,10 @@ function hourlyDump() {
       `[${m.timestamp}] ${m.sender}: ${m.content}`
     ).join("\n");
 
-    logToWebhook(`📤 **Hourly Chat Log (${time})**\n\\`\\`\\`
+    logToWebhook(`📤 **Hourly Chat Log (${time})**
+\`\`\`
 ${dump}
-\\`\\`\\``);
+\`\`\``);
 
     messageLog.length = 0;
     hourlyDump();
