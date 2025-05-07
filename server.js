@@ -1,3 +1,4 @@
+
 const express = require('express');
 const fs = require('fs');
 const http = require('http');
@@ -19,11 +20,9 @@ const ADMIN_USER = "Administrator";
 const ADMIN_PASS = "x<3Punky0623x";
 
 const messageLog = [];
-const userTokens = new Map(); // token → username
+const userTokens = new Map();
 
 const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1369437314257780817/u3mVxV-b9Dl-952xMElyOz0dbLP1fX-UFEs9jKHVwR5r-SN4nNkKUIzHSWQHlzfXRYpJ";
-
-// ========== Utility ==========
 
 function logToWebhook(content) {
   const payload = JSON.stringify({ content });
@@ -56,8 +55,6 @@ function broadcast(messageObj) {
   }
 }
 
-// ========== Auth ==========
-
 function loadJSON(path) {
   if (!fs.existsSync(path)) return {};
   return JSON.parse(fs.readFileSync(path));
@@ -66,8 +63,6 @@ function loadJSON(path) {
 function saveJSON(path, data) {
   fs.writeFileSync(path, JSON.stringify(data, null, 2));
 }
-
-// ========== Routes ==========
 
 app.post('/register', (req, res) => {
   const { username, password, masterKey } = req.body;
@@ -102,7 +97,6 @@ app.post('/admin-login', (req, res) => {
   res.status(403).json({ error: 'Unauthorized' });
 });
 
-// Delete message endpoint
 app.post('/delete', (req, res) => {
   const { token, id } = req.body;
   const username = userTokens.get(token);
@@ -114,7 +108,6 @@ app.post('/delete', (req, res) => {
   res.json({ success: true });
 });
 
-// Hourly webhook dump
 function hourlyDump() {
   const now = new Date();
   const msToNextHour = ((60 - now.getMinutes()) * 60 - now.getSeconds()) * 1000;
@@ -125,16 +118,16 @@ function hourlyDump() {
       `[${m.timestamp}] ${m.sender}: ${m.content}`
     ).join("\n");
 
-    logToWebhook(`📤 **Hourly Chat Log (${time})**\n\`\`\`\n${dump}\n\`\`\``);
+    logToWebhook(`📤 **Hourly Chat Log (${time})**\n\\`\\`\\`
+${dump}
+\\`\\`\\``);
 
-    messageLog.length = 0; // Clear log
+    messageLog.length = 0;
     hourlyDump();
   }, msToNextHour);
 }
 
 hourlyDump();
-
-// ========== WebSocket Chat ==========
 
 server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
@@ -157,16 +150,10 @@ wss.on('connection', (ws) => {
     };
 
     const index = messageLog.push(entry) - 1;
-
-    // Forward to clients
     broadcast(entry);
-
-    // Also log to webhook
     logToWebhook(`<b>${sender}</b> [${timestamp}]: ${content}`);
   });
 });
-
-// ========== Start Server ==========
 
 server.listen(PORT, () => {
   console.log(`Chat server running on port ${PORT}`);
