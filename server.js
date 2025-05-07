@@ -19,11 +19,12 @@ const MASTER_KEY = "0623";
 const ADMIN_USER = "Administrator";
 const ADMIN_PASS = "x<3Punky0623x";
 const MESSAGES_FILE = "messages.json";
+const BANS_FILE = "bans.json";
 
 let messageLog = loadMessages();
+let bans = loadJSON(BANS_FILE); // persistent ban map
 const userTokens = new Map(); // token → { username, displayName, ip }
 const adminTokens = new Set();
-const bans = new Set(); // stores "ip|username"
 
 function loadMessages() {
   try {
@@ -36,6 +37,15 @@ function loadMessages() {
 
 function saveMessages() {
   fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messageLog, null, 2));
+}
+
+function saveBans() {
+  fs.writeFileSync(BANS_FILE, JSON.stringify([...bans], null, 2));
+}
+
+function loadJSON(path) {
+  if (!fs.existsSync(path)) return new Set();
+  return new Set(JSON.parse(fs.readFileSync(path)));
 }
 
 function broadcast(data) {
@@ -147,25 +157,32 @@ wss.on('connection', (ws) => {
         messageLog.forEach(m => m.deleted = true);
         saveMessages();
         broadcast({ type: "clear" });
+        return;
       }
 
       if (command === "/help") {
         ws.send(JSON.stringify({ type: "system", content: "Commands: /clear /ban <name> /unban <name> /help" }));
+        return;
       }
 
       if (command === "/ban" && arg) {
         const victim = [...userTokens.values()].find(u => u.displayName === arg);
-        if (victim) {
+        if (victim && victim.username !== ADMIN_USER) {
           bans.add(`${victim.ip}|${victim.username}`);
+          saveBans();
           broadcast({ type: "system", content: `${arg} has been banned.` });
         }
+        return;
       }
 
       if (command === "/unban" && arg) {
-        [...bans].forEach(entry => {
+        const entries = [...bans];
+        entries.forEach(entry => {
           if (entry.endsWith(`|${arg}`)) bans.delete(entry);
         });
+        saveBans();
         broadcast({ type: "system", content: `${arg} has been unbanned.` });
+        return;
       }
 
       return;
