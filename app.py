@@ -1,7 +1,11 @@
 from flask import Flask, request, send_file, jsonify
 import yt_dlp
 import os
+import imageio_ffmpeg
 from flask_cors import CORS
+
+# Make ffmpeg available to yt-dlp
+os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
 app = Flask(__name__)
 CORS(app)
@@ -14,31 +18,34 @@ def download():
     if not url:
         return jsonify({'error': 'Missing URL parameter'}), 400
 
-    output_file = 'download.mp4'
+    output_file = 'video.mp4'
 
     if os.path.exists(output_file):
         os.remove(output_file)
 
-    # Handle audio separately
     if quality == 'audio':
         ydl_format = 'bestaudio[ext=m4a]/bestaudio'
         output_file = 'audio.m4a'
+        merge_format = 'm4a'
     else:
-        # Use best combined video+audio stream closest to requested resolution
         if quality == '1080p':
-            ydl_format = 'best[height<=1080][ext=mp4]/best[ext=mp4]'
+            ydl_format = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]'
         elif quality == '720p':
-            ydl_format = 'best[height<=720][ext=mp4]/best[ext=mp4]'
+            ydl_format = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]'
         elif quality == '480p':
-            ydl_format = 'best[height<=480][ext=mp4]/best[ext=mp4]'
+            ydl_format = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]'
         else:
             ydl_format = 'best[ext=mp4]'
+
+        merge_format = 'mp4'
 
     ydl_opts = {
         'format': ydl_format,
         'outtmpl': output_file,
         'quiet': True,
-        'cookiefile': 'cookies.txt'
+        'cookiefile': 'cookies.txt',
+        'merge_output_format': merge_format,
+        'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe()
     }
 
     try:
