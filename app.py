@@ -15,11 +15,11 @@ ADMIN_PASSWORD = 'password'
 CORS(app)
 
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SECURE'] = True  # Optional: only if using HTTPS
+app.config['SESSION_COOKIE_SECURE'] = True  # Only if your backend uses HTTPS
 
 os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
-# === Downloader Routes (Unchanged) ===
+# ========== Downloader Routes ==========
 
 def stream_file(file_path, filename):
     def generate():
@@ -42,7 +42,6 @@ def download():
 
     url = request.args.get('url')
     quality = request.args.get('quality', '1080p')
-
     if not url:
         return jsonify({'error': 'Missing URL parameter'}), 400
 
@@ -90,7 +89,6 @@ def download():
         filename = f"{title}.mp4" if quality != 'audio' else f"{title}.m4a"
 
         os.rename(output_file, filename)
-
         return stream_file(filename, filename)
 
     except Exception as e:
@@ -103,7 +101,6 @@ def get_info():
 
     url = request.args.get('url')
     quality = request.args.get('quality', '1080p')
-
     if not url:
         return jsonify({'error': 'Missing URL parameter'}), 400
 
@@ -121,16 +118,10 @@ def get_info():
 
         def get_matching_size(entry):
             formats = entry.get('formats', [])
-            target_formats = []
             if quality == 'audio':
                 target_formats = [f for f in formats if f.get('vcodec') == 'none']
             else:
-                if quality == '1080p':
-                    target_formats = [f for f in formats if f.get('height') == 1080]
-                elif quality == '720p':
-                    target_formats = [f for f in formats if f.get('height') == 720]
-                elif quality == '480p':
-                    target_formats = [f for f in formats if f.get('height') == 480]
+                target_formats = [f for f in formats if f.get('height') == int(quality.replace('p', ''))]
             sizes = [f.get('filesize') or f.get('filesize_approx') for f in target_formats if f.get('filesize') or f.get('filesize_approx')]
             return max(sizes) if sizes else 0
 
@@ -149,28 +140,7 @@ def get_info():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-# === Admin Routes (Secure) ===
-
-@app.route('/admin-panel')
-def admin_panel():
-    if session.get('admin_authenticated'):
-        return '''
-            <!DOCTYPE html>
-            <html>
-            <head><title>Admin Panel</title></head>
-            <body style="font-family: Arial; text-align: center; margin-top: 50px;">
-                <h1>Admin Panel</h1>
-                <p>Welcome, administrator. Access granted.</p>
-            </body>
-            </html>
-        '''
-    else:
-        return redirect('/admin-login')
-
-@app.route('/admin-login')
-def admin_login_page():
-    return '🔒 Unauthorized - Admin Login Required', 403
+# ========== Admin Panel & Auth ==========
 
 @app.route('/admin', methods=['POST'])
 def admin_authenticate():
@@ -189,6 +159,38 @@ def admin_authenticate():
         print("[LOGIN DEBUG] ADMIN LOGIN FAILED")
         return jsonify({'error': 'Unauthorized'}), 401
 
+@app.route('/admin-panel')
+def admin_panel():
+    if session.get('admin_authenticated'):
+        return '''
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Admin Panel</title>
+                <style>
+                    body { font-family: Arial; text-align: center; margin-top: 50px; background-color: #f0f0f0; }
+                </style>
+            </head>
+            <body>
+                <h1>Admin Panel</h1>
+                <p>Welcome, administrator. You are authenticated.</p>
+                <a href="/logout">Logout</a>
+            </body>
+            </html>
+        '''
+    else:
+        return redirect('/admin-login')
 
+@app.route('/logout')
+def logout():
+    session.pop('admin_authenticated', None)
+    return redirect('/admin-login')
+
+@app.route('/admin-login')
+def admin_login_page():
+    return '🔒 Unauthorized - Admin login required (static page only)', 403
+
+# Run it
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
