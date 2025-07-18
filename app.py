@@ -4,13 +4,13 @@ import os
 import imageio_ffmpeg
 from flask_cors import CORS
 
-# Backend API key
 API_KEY = 'xQk!39vd$2P0L7ab8wZ*Vn@1Ff9Rb6Yp'
 
-# Admin login details
 app = Flask(__name__)
-app.secret_key = 'random_admin_session_key_290qv!zzf'  # Change this later
-ADMIN_PASSWORDS = ['admin', 'password']
+app.secret_key = 'random_admin_session_key_290qv!zzf'
+
+ADMIN_USERNAME = 'admin'
+ADMIN_PASSWORD = 'password'
 
 CORS(app)
 
@@ -144,12 +144,11 @@ def get_info():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Admin login page
+# Admin routes
 @app.route('/admin-login')
 def admin_login_page():
     return open('admin-login.html').read()
 
-# Admin panel page
 @app.route('/admin-panel')
 def admin_panel():
     if session.get('admin_authenticated'):
@@ -157,12 +156,13 @@ def admin_panel():
     else:
         return redirect('/admin-login')
 
-# Password authentication endpoint
 @app.route('/admin', methods=['POST'])
 def admin_authenticate():
     data = request.get_json()
-    password = data.get('password')
-    if password in ADMIN_PASSWORDS:
+    username = data.get('username', '').lower()
+    password = data.get('password', '').lower()
+
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
         session['admin_authenticated'] = True
         return jsonify({'status': 'success'})
     else:
