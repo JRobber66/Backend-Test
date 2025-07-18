@@ -66,7 +66,8 @@ def download():
         'cookiefile': 'cookies.txt',
         'merge_output_format': merge_format,
         'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
-        'postprocessors': postprocessors
+        'postprocessors': postprocessors,
+        'extractor_args': {'youtubetab': ['skip=authcheck']}
     }
 
     try:
@@ -97,7 +98,12 @@ def get_info():
         return jsonify({'error': 'Missing URL parameter'}), 400
 
     try:
-        ydl_opts = {'quiet': True, 'cookiefile': 'cookies.txt'}
+        ydl_opts = {
+            'quiet': True,
+            'cookiefile': 'cookies.txt',
+            'extractor_args': {'youtubetab': ['skip=authcheck']}
+        }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
