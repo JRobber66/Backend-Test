@@ -55,9 +55,33 @@ def download():
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            info = ydl.extract_info(url, download=True)
 
-        return send_file(output_file, as_attachment=True)
+        title = info.get('title', 'download')
+        title = ''.join(c for c in title if c.isalnum() or c in ' _-').rstrip()
+        title = title[:60]
+        filename = f"{title}.mp4" if quality != 'audio' else f"{title}.m4a"
+
+        return send_file(output_file, as_attachment=True, download_name=filename)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/info')
+def get_info():
+    url = request.args.get('url')
+    if not url:
+        return jsonify({'error': 'Missing URL parameter'}), 400
+
+    try:
+        ydl_opts = {'quiet': True, 'cookiefile': 'cookies.txt'}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+        return jsonify({
+            'title': info.get('title', 'Unknown Title'),
+            'thumbnail': info.get('thumbnail', '')
+        })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
