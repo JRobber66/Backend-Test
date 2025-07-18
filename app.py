@@ -12,16 +12,17 @@ def download():
 
     output_file = 'video.mp4'
 
-    # Clean up old files
+    # Remove previous file if exists
     if os.path.exists(output_file):
         os.remove(output_file)
 
-    # yt-dlp options with cookies.txt
+    # yt-dlp options to avoid needing ffmpeg
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4',
+        'format': 'mp4',
         'outtmpl': output_file,
         'quiet': True,
-        'cookiefile': 'cookies.txt'
+        'cookiefile': 'cookies.txt',
+        'merge_output_format': 'mp4'
     }
 
     try:
