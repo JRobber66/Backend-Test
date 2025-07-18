@@ -12,19 +12,23 @@ def download():
 
     output_file = 'video.mp4'
 
+    # Clean up old files
     if os.path.exists(output_file):
         os.remove(output_file)
 
+    # yt-dlp options with cookies.txt
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4',
         'outtmpl': output_file,
-        'quiet': True
+        'quiet': True,
+        'cookiefile': 'cookies.txt'
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
         return send_file(output_file, as_attachment=True)
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
