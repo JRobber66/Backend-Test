@@ -14,29 +14,31 @@ def download():
     if not url:
         return jsonify({'error': 'Missing URL parameter'}), 400
 
-    output_file = 'video.mp4'
+    output_file = 'download.mp4'
 
     if os.path.exists(output_file):
         os.remove(output_file)
 
+    # Handle audio separately
     if quality == 'audio':
         ydl_format = 'bestaudio[ext=m4a]/bestaudio'
         output_file = 'audio.m4a'
-    elif quality == '1080p':
-        ydl_format = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]'
-    elif quality == '720p':
-        ydl_format = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]'
-    elif quality == '480p':
-        ydl_format = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]'
     else:
-        ydl_format = 'best[ext=mp4]'
+        # Use best combined video+audio stream closest to requested resolution
+        if quality == '1080p':
+            ydl_format = 'best[height<=1080][ext=mp4]/best[ext=mp4]'
+        elif quality == '720p':
+            ydl_format = 'best[height<=720][ext=mp4]/best[ext=mp4]'
+        elif quality == '480p':
+            ydl_format = 'best[height<=480][ext=mp4]/best[ext=mp4]'
+        else:
+            ydl_format = 'best[ext=mp4]'
 
     ydl_opts = {
         'format': ydl_format,
         'outtmpl': output_file,
         'quiet': True,
-        'cookiefile': 'cookies.txt',
-        'merge_output_format': 'mp4' if quality != 'audio' else 'm4a'
+        'cookiefile': 'cookies.txt'
     }
 
     try:
