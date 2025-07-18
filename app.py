@@ -7,18 +7,23 @@ app = Flask(__name__)
 @app.route('/download')
 def download():
     url = request.args.get('url')
+    quality = request.args.get('quality', 'high')  # Default to high quality
+
     if not url:
         return jsonify({'error': 'Missing URL parameter'}), 400
 
     output_file = 'video.mp4'
 
-    # Remove previous file if exists
     if os.path.exists(output_file):
         os.remove(output_file)
 
-    # yt-dlp options to avoid needing ffmpeg
+    if quality == 'standard':
+        ydl_format = 'best[ext=mp4]'
+    else:  # high quality
+        ydl_format = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]'
+
     ydl_opts = {
-        'format': 'mp4',
+        'format': ydl_format,
         'outtmpl': output_file,
         'quiet': True,
         'cookiefile': 'cookies.txt',
