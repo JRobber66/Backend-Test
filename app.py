@@ -1,8 +1,10 @@
 from flask import Flask, request, send_file, jsonify
 import yt_dlp
 import os
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 @app.route('/download')
 def download():
@@ -17,7 +19,6 @@ def download():
     if os.path.exists(output_file):
         os.remove(output_file)
 
-    # Use single-stream mp4 downloads only
     if quality == 'standard':
         ydl_format = 'worst[ext=mp4]'
     else:  # best quality available as a single stream
