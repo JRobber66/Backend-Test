@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify, Response
 import yt_dlp
 import os
 import imageio_ffmpeg
@@ -8,6 +8,14 @@ os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe
 
 app = Flask(__name__)
 CORS(app)
+
+def serve_file(file_path, filename):
+    with open(file_path, 'rb') as f:
+        data = f.read()
+    response = Response(data)
+    response.headers['Content-Type'] = 'application/octet-stream'
+    response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 @app.route('/download')
 def download():
@@ -62,7 +70,7 @@ def download():
         title = title[:60]
         filename = f"{title}.mp4" if quality != 'audio' else f"{title}.m4a"
 
-        return send_file(output_file, as_attachment=True, download_name=filename)
+        return serve_file(output_file, filename)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
