@@ -1,15 +1,20 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, session, redirect
 import yt_dlp
 import os
 import imageio_ffmpeg
 from flask_cors import CORS
 
+# Backend API key
 API_KEY = 'xQk!39vd$2P0L7ab8wZ*Vn@1Ff9Rb6Yp'
 
-os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
-
+# Admin login details
 app = Flask(__name__)
+app.secret_key = 'random_admin_session_key_290qv!zzf'  # Change this later
+ADMIN_PASSWORDS = ['admin', 'password']
+
 CORS(app)
+
+os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
 def stream_file(file_path, filename):
     def generate():
@@ -138,6 +143,30 @@ def get_info():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# Admin login page
+@app.route('/admin-login')
+def admin_login_page():
+    return open('admin-login.html').read()
+
+# Admin panel page
+@app.route('/admin-panel')
+def admin_panel():
+    if session.get('admin_authenticated'):
+        return open('admin-panel.html').read()
+    else:
+        return redirect('/admin-login')
+
+# Password authentication endpoint
+@app.route('/admin', methods=['POST'])
+def admin_authenticate():
+    data = request.get_json()
+    password = data.get('password')
+    if password in ADMIN_PASSWORDS:
+        session['admin_authenticated'] = True
+        return jsonify({'status': 'success'})
+    else:
+        return jsonify({'error': 'Unauthorized'}), 401
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
