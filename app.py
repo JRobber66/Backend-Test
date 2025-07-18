@@ -26,14 +26,14 @@ def download():
         ydl_format = 'bestaudio[ext=m4a]/bestaudio'
         output_file = 'audio.m4a'
         merge_format = 'm4a'
-        postprocessors = []  # No postprocessing needed for audio-only
+        postprocessors = []
     else:
         if quality == '1080p':
-            ydl_format = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]'
+            ydl_format = 'bestvideo[height<=1080][ext=mp4][vcodec!*=av01]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]'
         elif quality == '720p':
-            ydl_format = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]'
+            ydl_format = 'bestvideo[height<=720][ext=mp4][vcodec!*=av01]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]'
         elif quality == '480p':
-            ydl_format = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]'
+            ydl_format = 'bestvideo[height<=480][ext=mp4][vcodec!*=av01]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]'
         else:
             ydl_format = 'best[ext=mp4]'
 
