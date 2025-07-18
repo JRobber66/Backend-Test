@@ -16,6 +16,8 @@ CORS(app)
 
 os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
+# === Downloader Routes (Unchanged) ===
+
 def stream_file(file_path, filename):
     def generate():
         with open(file_path, 'rb') as f:
@@ -144,7 +146,9 @@ def get_info():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Admin routes
+
+# === Admin Routes ===
+
 @app.route('/admin-login')
 def admin_login_page():
     return open('admin-login.html').read()
@@ -159,14 +163,20 @@ def admin_panel():
 @app.route('/admin', methods=['POST'])
 def admin_authenticate():
     data = request.get_json()
-    username = data.get('username', '').lower()
-    password = data.get('password', '').lower()
+    username = str(data.get('username', '')).strip().lower()
+    password = str(data.get('password', '')).strip().lower()
+
+    print(f"[LOGIN DEBUG] Username received: '{username}'")
+    print(f"[LOGIN DEBUG] Password received: '{password}'")
 
     if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
         session['admin_authenticated'] = True
+        print("[LOGIN DEBUG] ADMIN LOGIN SUCCESSFUL")
         return jsonify({'status': 'success'})
     else:
+        print("[LOGIN DEBUG] ADMIN LOGIN FAILED")
         return jsonify({'error': 'Unauthorized'}), 401
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
