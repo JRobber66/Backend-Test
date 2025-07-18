@@ -9,7 +9,7 @@ CORS(app)
 @app.route('/download')
 def download():
     url = request.args.get('url')
-    quality = request.args.get('quality', 'best')
+    quality = request.args.get('quality', '1080p')
 
     if not url:
         return jsonify({'error': 'Missing URL parameter'}), 400
@@ -19,8 +19,15 @@ def download():
     if os.path.exists(output_file):
         os.remove(output_file)
 
-    if quality == 'standard':
-        ydl_format = 'worst[ext=mp4]'
+    if quality == 'audio':
+        ydl_format = 'bestaudio[ext=m4a]/bestaudio'
+        output_file = 'audio.m4a'
+    elif quality == '1080p':
+        ydl_format = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]'
+    elif quality == '720p':
+        ydl_format = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]'
+    elif quality == '480p':
+        ydl_format = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]'
     else:
         ydl_format = 'best[ext=mp4]'
 
@@ -28,20 +35,15 @@ def download():
         'format': ydl_format,
         'outtmpl': output_file,
         'quiet': True,
-        'cookiefile': 'cookies.txt'
+        'cookiefile': 'cookies.txt',
+        'merge_output_format': 'mp4' if quality != 'audio' else 'm4a'
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            ydl.download([url])
 
-        # Generate a safe filename from the video title
-        title = info.get('title', 'download')
-        title = ''.join(c for c in title if c.isalnum() or c in ' _-').rstrip()
-        title = title[:60]  # Truncate if too long
-        filename = f"{title}.mp4"
-
-        return send_file(output_file, as_attachment=True, download_name=filename)
+        return send_file(output_file, as_attachment=True)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
