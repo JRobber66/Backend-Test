@@ -14,6 +14,9 @@ ADMIN_PASSWORD = 'password'
 
 CORS(app)
 
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = True  # Optional: only if using HTTPS
+
 os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
 # === Downloader Routes (Unchanged) ===
@@ -147,18 +150,27 @@ def get_info():
         return jsonify({'error': str(e)}), 500
 
 
-# === Admin Routes ===
-
-@app.route('/admin-login')
-def admin_login_page():
-    return open('admin-login.html').read()
+# === Admin Routes (Secure) ===
 
 @app.route('/admin-panel')
 def admin_panel():
     if session.get('admin_authenticated'):
-        return open('admin-panel.html').read()
+        return '''
+            <!DOCTYPE html>
+            <html>
+            <head><title>Admin Panel</title></head>
+            <body style="font-family: Arial; text-align: center; margin-top: 50px;">
+                <h1>Admin Panel</h1>
+                <p>Welcome, administrator. Access granted.</p>
+            </body>
+            </html>
+        '''
     else:
         return redirect('/admin-login')
+
+@app.route('/admin-login')
+def admin_login_page():
+    return '🔒 Unauthorized - Admin Login Required', 403
 
 @app.route('/admin', methods=['POST'])
 def admin_authenticate():
