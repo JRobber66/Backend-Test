@@ -23,7 +23,7 @@ def download():
 
     if quality == 'standard':
         ydl_format = 'best[ext=mp4]'
-    else:  # High quality
+    else:  # high quality
         ydl_format = 'bestvideo+bestaudio/best'
 
     ydl_opts = {
@@ -32,7 +32,11 @@ def download():
         'quiet': True,
         'cookiefile': 'cookies.txt',
         'merge_output_format': 'mp4',
-        'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe()
+        'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
+        'postprocessors': [{
+            'key': 'FFmpegVideoConvertor',
+            'preferedformat': 'mp4'
+        }]
     }
 
     try:
