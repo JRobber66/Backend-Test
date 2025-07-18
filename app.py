@@ -3,16 +3,13 @@ import yt_dlp
 import os
 import imageio_ffmpeg
 from flask_cors import CORS
-import threading
 
-API_KEY = 'super_secret_key_123'
+API_KEY = 'xQk!39vd$2P0L7ab8wZ*Vn@1Ff9Rb6Yp'
 
 os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
 app = Flask(__name__)
 CORS(app)
-
-progress_data = {}
 
 def stream_file(file_path, filename):
     def generate():
@@ -28,14 +25,6 @@ def stream_file(file_path, filename):
     response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
-def cleanup_file(filename, delay=60):
-    def delete_file():
-        try:
-            os.remove(filename)
-        except:
-            pass
-    threading.Timer(delay, delete_file).start()
-
 @app.route('/download')
 def download():
     if request.args.get('key') != API_KEY:
@@ -43,34 +32,32 @@ def download():
 
     url = request.args.get('url')
     quality = request.args.get('quality', '1080p')
-    task_id = request.args.get('task', 'default')
 
     if not url:
         return jsonify({'error': 'Missing URL parameter'}), 400
 
-    output_file = f'{task_id}_video.mp4'
+    output_file = 'video.mp4'
 
     if quality == 'audio':
         ydl_format = 'bestaudio[ext=m4a]/bestaudio'
-        output_file = f'{task_id}_audio.m4a'
+        output_file = 'audio.m4a'
         merge_format = 'm4a'
         postprocessors = []
     else:
-        ydl_format = (
-            'bestvideo[height<=1080][ext=mp4][vcodec!*=av01]+bestaudio[ext=m4a]/'
-            'best[height<=1080][ext=mp4]'
-        )
+        if quality == '1080p':
+            ydl_format = 'bestvideo[height<=1080][ext=mp4][vcodec!*=av01]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]'
+        elif quality == '720p':
+            ydl_format = 'bestvideo[height<=720][ext=mp4][vcodec!*=av01]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]'
+        elif quality == '480p':
+            ydl_format = 'bestvideo[height<=480][ext=mp4][vcodec!*=av01]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]'
+        else:
+            ydl_format = 'best[ext=mp4]'
+
         merge_format = 'mp4'
         postprocessors = [{
             'key': 'FFmpegVideoConvertor',
             'preferedformat': 'mp4'
         }]
-
-    progress_data[task_id] = 'Starting...'
-
-    def hook(d):
-        if d['status'] == 'downloading':
-            progress_data[task_id] = d.get('_percent_str', '').strip()
 
     ydl_opts = {
         'format': ydl_format,
@@ -79,8 +66,7 @@ def download():
         'cookiefile': 'cookies.txt',
         'merge_output_format': merge_format,
         'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
-        'postprocessors': postprocessors,
-        'progress_hooks': [hook]
+        'postprocessors': postprocessors
     }
 
     try:
@@ -94,22 +80,10 @@ def download():
 
         os.rename(output_file, filename)
 
-        progress_data.pop(task_id, None)
-        cleanup_file(filename)
-
         return stream_file(filename, filename)
 
     except Exception as e:
-        progress_data.pop(task_id, None)
         return jsonify({'error': str(e)}), 500
-
-@app.route('/progress')
-def get_progress():
-    if request.args.get('key') != API_KEY:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    task_id = request.args.get('task', 'default')
-    return jsonify({'progress': progress_data.get(task_id, 'Idle')})
 
 @app.route('/info')
 def get_info():
@@ -117,6 +91,8 @@ def get_info():
         return jsonify({'error': 'Unauthorized'}), 401
 
     url = request.args.get('url')
+    quality = request.args.get('quality', '1080p')
+
     if not url:
         return jsonify({'error': 'Missing URL parameter'}), 400
 
@@ -125,10 +101,33 @@ def get_info():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
+        total_size = 0
+
+        def get_matching_size(entry):
+            formats = entry.get('formats', [])
+            target_formats = []
+            if quality == 'audio':
+                target_formats = [f for f in formats if f.get('vcodec') == 'none']
+            else:
+                if quality == '1080p':
+                    target_formats = [f for f in formats if f.get('height') == 1080]
+                elif quality == '720p':
+                    target_formats = [f for f in formats if f.get('height') == 720]
+                elif quality == '480p':
+                    target_formats = [f for f in formats if f.get('height') == 480]
+            sizes = [f.get('filesize') or f.get('filesize_approx') for f in target_formats if f.get('filesize') or f.get('filesize_approx')]
+            return max(sizes) if sizes else 0
+
+        if 'entries' in info:
+            for entry in info['entries']:
+                total_size += get_matching_size(entry)
+        else:
+            total_size = get_matching_size(info)
+
         return jsonify({
             'title': info.get('title', 'Unknown Title'),
             'thumbnail': info.get('thumbnail', ''),
-            'filesize': info.get('filesize_approx', 0)
+            'filesize': total_size
         })
 
     except Exception as e:
