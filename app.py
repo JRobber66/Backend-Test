@@ -4,7 +4,6 @@ import os
 import imageio_ffmpeg
 from flask_cors import CORS
 
-# Make ffmpeg available to yt-dlp
 os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
 app = Flask(__name__)
@@ -27,6 +26,7 @@ def download():
         ydl_format = 'bestaudio[ext=m4a]/bestaudio'
         output_file = 'audio.m4a'
         merge_format = 'm4a'
+        postprocessors = []  # No postprocessing needed for audio-only
     else:
         if quality == '1080p':
             ydl_format = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]'
@@ -38,6 +38,10 @@ def download():
             ydl_format = 'best[ext=mp4]'
 
         merge_format = 'mp4'
+        postprocessors = [{
+            'key': 'FFmpegVideoConvertor',
+            'preferedformat': 'mp4'
+        }]
 
     ydl_opts = {
         'format': ydl_format,
@@ -45,7 +49,8 @@ def download():
         'quiet': True,
         'cookiefile': 'cookies.txt',
         'merge_output_format': merge_format,
-        'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe()
+        'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
+        'postprocessors': postprocessors
     }
 
     try:
