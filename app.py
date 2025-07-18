@@ -4,12 +4,12 @@ import os
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app)
 
 @app.route('/download')
 def download():
     url = request.args.get('url')
-    quality = request.args.get('quality', 'best')  # default to best
+    quality = request.args.get('quality', 'best')
 
     if not url:
         return jsonify({'error': 'Missing URL parameter'}), 400
@@ -21,7 +21,7 @@ def download():
 
     if quality == 'standard':
         ydl_format = 'worst[ext=mp4]'
-    else:  # best quality available as a single stream
+    else:
         ydl_format = 'best[ext=mp4]'
 
     ydl_opts = {
@@ -33,8 +33,15 @@ def download():
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-        return send_file(output_file, as_attachment=True)
+            info = ydl.extract_info(url, download=True)
+
+        # Generate a safe filename from the video title
+        title = info.get('title', 'download')
+        title = ''.join(c for c in title if c.isalnum() or c in ' _-').rstrip()
+        title = title[:60]  # Truncate if too long
+        filename = f"{title}.mp4"
+
+        return send_file(output_file, as_attachment=True, download_name=filename)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
