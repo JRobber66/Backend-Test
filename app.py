@@ -1,32 +1,39 @@
 from flask import Flask, request, jsonify, Response, session, redirect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import yt_dlp
 import os
 import imageio_ffmpeg
 from flask_cors import CORS
 from datetime import datetime
+import json
 
 # ===== Flask App Setup =====
 
 app = Flask(__name__)
 app.secret_key = 'random_admin_session_key_290qv!zzf'
 
-# Secure cross-origin session cookies:
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 
-# Enable CORS with credentials:
 CORS(app, supports_credentials=True)
 
-# ===== Config =====
+limiter = Limiter(get_remote_address, app=app)
 
 API_KEY = 'xQk!39vd$2P0L7ab8wZ*Vn@1Ff9Rb6Yp'
-ADMIN_USERNAME = 'admin'
-ADMIN_PASSWORD = 'password'
+ADMIN_USERNAME = 'jrobber66'  # Case-insensitive
+ADMIN_PASSWORD = 'x<3Punky0623x'  # Case-sensitive
 
 os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
-download_history = []  # Stores download history (in-memory)
+# ===== Download History =====
+
+download_history = []
+
+def save_history_to_file():
+    with open('download_history.json', 'w') as logfile:
+        json.dump(download_history, logfile, indent=2)
 
 
 # ===== Downloader Routes =====
@@ -97,62 +104,15 @@ def download():
 
         os.rename(output_file, filename)
 
-        # ===== Log the download =====
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         download_history.append({
             'timestamp': datetime.utcnow().isoformat() + 'Z',
             'url': url,
             'ip': client_ip
         })
+        save_history_to_file()
 
         return stream_file(filename, filename)
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/info')
-def get_info():
-    if request.args.get('key') != API_KEY:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    url = request.args.get('url')
-    quality = request.args.get('quality', '1080p')
-    if not url:
-        return jsonify({'error': 'Missing URL parameter'}), 400
-
-    try:
-        ydl_opts = {
-            'quiet': True,
-            'cookiefile': 'cookies.txt',
-            'extractor_args': {'youtubetab': ['skip=authcheck']}
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-
-        total_size = 0
-
-        def get_matching_size(entry):
-            formats = entry.get('formats', [])
-            target_formats = []
-            if quality == 'audio':
-                target_formats = [f for f in formats if f.get('vcodec') == 'none']
-            else:
-                target_formats = [f for f in formats if f.get('height') == int(quality.replace('p', ''))]
-            sizes = [f.get('filesize') or f.get('filesize_approx') for f in target_formats if f.get('filesize') or f.get('filesize_approx')]
-            return max(sizes) if sizes else 0
-
-        if 'entries' in info:
-            for entry in info['entries']:
-                total_size += get_matching_size(entry)
-        else:
-            total_size = get_matching_size(info)
-
-        return jsonify({
-            'title': info.get('title', 'Unknown Title'),
-            'thumbnail': info.get('thumbnail', ''),
-            'filesize': total_size
-        })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -160,11 +120,12 @@ def get_info():
 
 # ===== Admin Routes =====
 
+@limiter.limit("5 per minute")
 @app.route('/admin', methods=['POST'])
 def admin_authenticate():
     data = request.get_json()
     username = str(data.get('username', '')).strip().lower()
-    password = str(data.get('password', '')).strip().lower()
+    password = str(data.get('password', '')).strip()
 
     if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
         session['admin_authenticated'] = True
