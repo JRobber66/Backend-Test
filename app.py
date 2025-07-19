@@ -3,6 +3,7 @@ import yt_dlp
 import os
 import imageio_ffmpeg
 from flask_cors import CORS
+from datetime import datetime
 
 # ===== Flask App Setup =====
 
@@ -24,6 +25,9 @@ ADMIN_USERNAME = 'admin'
 ADMIN_PASSWORD = 'password'
 
 os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
+
+download_history = []  # Stores download history (in-memory)
+
 
 # ===== Downloader Routes =====
 
@@ -92,6 +96,15 @@ def download():
         filename = f"{title}.mp4" if quality != 'audio' else f"{title}.m4a"
 
         os.rename(output_file, filename)
+
+        # ===== Log the download =====
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        download_history.append({
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'url': url,
+            'ip': client_ip
+        })
+
         return stream_file(filename, filename)
 
     except Exception as e:
@@ -144,6 +157,7 @@ def get_info():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 # ===== Admin Routes =====
 
 @app.route('/admin', methods=['POST'])
@@ -174,10 +188,18 @@ def admin_panel():
             <body>
                 <h1>Admin Panel</h1>
                 <p>Welcome, administrator. You are authenticated.</p>
-                <a href="/logout">Logout</a>
+                <p><a href="/admin-history">View Download History</a></p>
+                <p><a href="/logout">Logout</a></p>
             </body>
             </html>
         '''
+    else:
+        return redirect('/admin-login')
+
+@app.route('/admin-history')
+def view_download_history():
+    if session.get('admin_authenticated'):
+        return jsonify(download_history)
     else:
         return redirect('/admin-login')
 
@@ -189,6 +211,7 @@ def logout():
 @app.route('/admin-login')
 def admin_login_page():
     return '🔒 Unauthorized - Admin login required (static page only)', 403
+
 
 # ===== Launch Server =====
 
